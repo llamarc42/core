@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Reusable deterministic framework behavior for llamarc42.</Description>
+    <RootNamespace>Llamarc42.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
