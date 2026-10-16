@@ -23,5 +23,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet restore Llamarc42.Core.slnx
+      - run: dotnet format Llamarc42.Core.slnx --verify-no-changes --no-restore --severity info
       - run: dotnet build Llamarc42.Core.slnx --configuration Release --no-restore
       - run: dotnet test Llamarc42.Core.slnx --configuration Release --no-build
