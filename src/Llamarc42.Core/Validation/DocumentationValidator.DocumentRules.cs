@@ -53,7 +53,7 @@ public static partial class DocumentationValidator
             return;
         }
 
-        var candidates = DeclarationCandidates(source.Text).Where(candidate => source.IsTopLevelParagraphLine(candidate.Line - 1)).ToArray();
+        var candidates = DeclarationCandidates(string.Join('\n', source.CommentFreeLines)).Where(candidate => source.IsTopLevelParagraphLine(candidate.Line - 1)).ToArray();
         if (candidates.Length == 0)
         {
             diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V003,
@@ -130,6 +130,7 @@ public static partial class DocumentationValidator
         var matchingHeadings = source.Headings(1).Where(heading => IdentifierToken(heading.Text, identifier)).ToArray();
         if (matchingHeadings.Length != 1 || source.Headings(1).Count() != 1)
         {
+            source.IdentifierValid = false;
             diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V202,
                 $"ADR requires exactly one level-one heading containing token {identifier}."));
         }
@@ -188,6 +189,7 @@ public static partial class DocumentationValidator
     {
         foreach (var duplicate in decisions.GroupBy(source => source.Entry.DecisionId).Where(group => group.Count() > 1))
         {
+            foreach (var source in duplicate) source.IdentifierValid = false;
             diagnostics.Add(new ValidationDiagnostic(ValidationDiagnosticCode.LC42V201,
                 $"Decision identifier {duplicate.Key} is used by multiple paths.",
                 relatedSourcePaths: duplicate.Select(source => source.Entry.SourcePath)));
@@ -221,6 +223,14 @@ public static partial class DocumentationValidator
                 "Iteration record should use history/iterations/YYYY/YYYY-MM-DD[-topic].md."));
         }
 
+        var immediateParent = segments[^2];
+        if (daily && file.Length >= 4 && file[..4].All(char.IsAsciiDigit) &&
+            immediateParent.Length == 4 && immediateParent.All(char.IsAsciiDigit) && immediateParent != file[..4])
+        {
+            diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V302,
+                $"Iteration filename year {file[..4]} differs from directory year {immediateParent}."));
+        }
+
         if (!daily || !grammar) return;
         var fileYear = int.Parse(file.AsSpan(0, 4), CultureInfo.InvariantCulture);
         var month = int.Parse(file.AsSpan(5, 2), CultureInfo.InvariantCulture);
@@ -231,11 +241,5 @@ public static partial class DocumentationValidator
                 $"Daily iteration date '{file[..10]}' is not a valid Gregorian date."));
         }
 
-        var immediateParent = segments[^2];
-        if (immediateParent.Length == 4 && immediateParent.All(char.IsAsciiDigit) && immediateParent != file[..4])
-        {
-            diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V302,
-                $"Iteration filename year {file[..4]} differs from directory year {immediateParent}."));
-        }
     }
 }

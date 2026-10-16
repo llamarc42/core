@@ -9,6 +9,60 @@ namespace Llamarc42.Core.Tests.Validation;
 public sealed class ValidationBoundaryTests
 {
     [Fact]
+    public void CommentFenceDoesNotHideDeclaration()
+    {
+        using var fixture = Project();
+        fixture.Write("project.md", "# Project\n\n<!--\n```\n-->\n\nDocumentation contract: llamarc42/v0.1\n\nPurpose.\n");
+        Assert.Equal(ValidationOutcome.Valid, DocumentationValidator.Validate(fixture.Root).Outcome);
+    }
+
+    [Theory]
+    [InlineData("`<!--`")]
+    [InlineData("example\n\n```\n<!--\n```\n")]
+    public void LiteralCommentMarkersDoNotEraseAdrSections(string title)
+    {
+        using var fixture = Project();
+        fixture.Write("decisions/ADR-001-one.md", ContractCoverageTests.Adr("ADR-001 " + title, "Accepted"));
+        var result = DocumentationValidator.Validate(fixture.Root);
+        Assert.Equal(ValidationOutcome.Valid, result.Outcome);
+        Assert.Equal(AuthorityState.Current, result.Documents.Single(document => document.DecisionId == "ADR-001").AuthorityState);
+    }
+
+    [Fact]
+    public void MalformedTopicRetainsKnownYearMismatch()
+    {
+        using var fixture = Project();
+        fixture.Write("history/iterations/2025/2026-10-16-Review.md", "History.");
+        var result = DocumentationValidator.Validate(fixture.Root);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V109);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V302);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InvalidIdentifiersSuppressDependentEdgesWithoutChangingAuthority(bool duplicate)
+    {
+        using var fixture = Project();
+        fixture.Write("decisions/ADR-001-one.md", ContractCoverageTests.Adr("ADR-001", "Superseded", "## Superseded by\n\n[next](ADR-002-two.md)\n"));
+        fixture.Write("decisions/ADR-002-two.md", ContractCoverageTests.Adr(duplicate ? "ADR-002" : "ADR-003", "Accepted"));
+        if (duplicate) fixture.Write("decisions/ADR-002-other.md", ContractCoverageTests.Adr("ADR-002", "Accepted"));
+        var result = DocumentationValidator.Validate(fixture.Root);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == (duplicate ? ValidationDiagnosticCode.LC42V201 : ValidationDiagnosticCode.LC42V202));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code is ValidationDiagnosticCode.LC42V214 or ValidationDiagnosticCode.LC42V215 or ValidationDiagnosticCode.LC42V216);
+        Assert.Equal(AuthorityState.Current, result.Documents.Single(document => document.SourcePath == "decisions/ADR-002-two.md").AuthorityState);
+    }
+
+    [Fact]
+    public void SupersededAdrMayRetainHistoricalAmendment()
+    {
+        using var fixture = Project();
+        fixture.Write("decisions/ADR-001-one.md", ContractCoverageTests.Adr("ADR-001", "Superseded", "## Superseded by\n\n[next](ADR-002-two.md)\n\n## Amends\n\n[target](ADR-002-two.md)\n"));
+        fixture.Write("decisions/ADR-002-two.md", ContractCoverageTests.Adr("ADR-002", "Accepted", "## Supersedes\n\n[old](ADR-001-one.md)\n"));
+        Assert.Equal(ValidationOutcome.Valid, DocumentationValidator.Validate(fixture.Root).Outcome);
+    }
+
+    [Fact]
     public void HtmlBodySingleLetterSchemesAndRepeatedIdentifierTokensUseParsedMeaning()
     {
         using var fixture = Project();

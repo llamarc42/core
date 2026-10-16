@@ -230,8 +230,16 @@ public static partial class DocumentationValidator
             Entry = entry;
             Text = text;
             Lines = SplitLines(text);
-            CommentFreeLines = SplitLines(CommentPattern().Replace(text, match => new string('\n', match.Value.Count(character => character == '\n'))));
             Document = Markdown.Parse(text, MarkdownPipeline);
+            var masked = text.ToCharArray();
+            foreach (var node in Document.Descendants().Where(node => node is HtmlBlock or HtmlInline))
+            {
+                var fragment = text.Substring(node.Span.Start, node.Span.End - node.Span.Start + 1);
+                foreach (Match match in CommentPattern().Matches(fragment))
+                    for (var index = node.Span.Start + match.Index; index < node.Span.Start + match.Index + match.Length; index++)
+                        if (masked[index] is not ('\r' or '\n')) masked[index] = ' ';
+            }
+            CommentFreeLines = SplitLines(new string(masked));
             Authority = TypeAuthority(entry.DocumentType);
         }
 
@@ -253,6 +261,7 @@ public static partial class DocumentationValidator
         internal MarkdownDocument Document { get; }
         internal AuthorityState Authority { get; set; }
         internal string? LifecycleStatus { get; set; }
+        internal bool IdentifierValid { get; set; } = true;
 
         internal static DocumentState Unreadable(DocumentInventoryEntry entry) => new(entry);
         internal static DocumentState Undecodable(DocumentInventoryEntry entry) => new(entry);

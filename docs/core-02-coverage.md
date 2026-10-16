@@ -99,6 +99,13 @@ All four tool codes have individual theory invocations of
 
 ## Execution and limits
 
+Automated-review regressions in `ValidationBoundaryTests` cover fences inside actual
+HTML comments, literal comment delimiters inside inline/fenced code, known year
+mismatches despite malformed iteration topics, invalid ADR identifiers suppressing
+dependent authority edges without changing source authority, and historical
+amendments on Superseded ADRs. Relationship resolution and reverse adjacency are
+cached once per validation to avoid re-parsing relationships at each chain hop.
+
 Run the commands in [README](../README.md). CI runs formatting verification, Release
 build with warnings as errors and recommended analysis, and the entire test suite
 on Ubuntu, macOS, and Windows. PR evidence records the exact run/HEAD and totals.

@@ -120,13 +120,20 @@ public static partial class DocumentationValidator
 
     private static void ValidateRelationships(IReadOnlyList<DocumentState> decisions, List<ValidationDiagnostic> diagnostics)
     {
-        foreach (var source in decisions.Where(source => source.LifecycleStatus is "Accepted" or "Superseded"))
+        var edges = decisions.ToDictionary(source => source, source => RelationshipHeadings.ToDictionary(
+            heading => heading, heading => source.ResolvedRelationships(heading, decisions).Distinct().ToArray()));
+        static bool Eligible(DocumentState source) => source.IdentifierValid && source.LifecycleStatus is not null;
+        var incomingEdges = decisions.ToDictionary(source => source, _ => new List<DocumentState>());
+        foreach (var source in decisions.Where(source => Eligible(source) && source.LifecycleStatus is "Accepted" or "Superseded"))
+            foreach (var target in edges[source]["Supersedes"]) incomingEdges[target].Add(source);
+
+        foreach (var source in decisions.Where(source => Eligible(source) && source.LifecycleStatus is "Accepted" or "Superseded"))
         {
-            var successors = source.ResolvedRelationships("Superseded by", decisions).Distinct().ToArray();
-            if (source.LifecycleStatus == "Superseded" && successors.Length != 1 ||
+            var successors = edges[source]["Superseded by"];
+            if (successors.All(Eligible) && (source.LifecycleStatus == "Superseded" && successors.Length != 1 ||
                 source.LifecycleStatus == "Accepted" && successors.Length > 0 ||
                 successors.Any(target => target.LifecycleStatus is not null &&
-                    !target.ResolvedRelationships("Supersedes", decisions).Contains(source)))
+                    !edges[target]["Supersedes"].Contains(source))))
             {
                 diagnostics.Add(new ValidationDiagnostic(ValidationDiagnosticCode.LC42V214,
                     $"ADR '{source.Entry.SourcePath}' requires Superseded status, one declared successor, and reciprocal Supersedes metadata.",
@@ -134,11 +141,11 @@ public static partial class DocumentationValidator
                     relatedSourcePaths: successors.Select(target => target.Entry.SourcePath)));
             }
 
-            foreach (var predecessor in source.ResolvedRelationships("Supersedes", decisions).Distinct())
+            foreach (var predecessor in edges[source]["Supersedes"])
             {
-                if (predecessor.LifecycleStatus is null) continue;
+                if (!Eligible(predecessor)) continue;
                 if (predecessor.LifecycleStatus != "Superseded" ||
-                    !predecessor.ResolvedRelationships("Superseded by", decisions).Contains(source))
+                    !edges[predecessor]["Superseded by"].Contains(source))
                 {
                     diagnostics.Add(new ValidationDiagnostic(ValidationDiagnosticCode.LC42V215,
                         $"'{source.Entry.SourcePath}' supersedes '{predecessor.Entry.SourcePath}': require Superseded predecessor and reciprocal Superseded by.",
@@ -149,12 +156,13 @@ public static partial class DocumentationValidator
 
             foreach (var heading in new[] { "Amends", "Amended by" })
             {
+                if (source.LifecycleStatus != "Accepted") continue;
                 var inverse = heading == "Amends" ? "Amended by" : "Amends";
-                foreach (var target in source.ResolvedRelationships(heading, decisions).Distinct())
+                foreach (var target in edges[source][heading])
                 {
-                    if (target.LifecycleStatus is null) continue;
+                    if (!Eligible(target)) continue;
                     if (source.LifecycleStatus != "Accepted" || target.LifecycleStatus != "Accepted" ||
-                        !target.ResolvedRelationships(inverse, decisions).Contains(source))
+                        !edges[target][inverse].Contains(source))
                     {
                         diagnostics.Add(new ValidationDiagnostic(ValidationDiagnosticCode.LC42V217,
                             $"'{source.Entry.SourcePath}' {heading} '{target.Entry.SourcePath}': require Accepted endpoints and reciprocal {inverse}.",
@@ -175,12 +183,12 @@ public static partial class DocumentationValidator
             }
         }
 
-        foreach (var start in decisions.Where(source => source.LifecycleStatus == "Superseded"))
+        foreach (var start in decisions.Where(source => Eligible(source) && source.LifecycleStatus == "Superseded"))
         {
             var visited = new HashSet<DocumentState>();
             var current = start;
             var invalid = false;
-            while (current.LifecycleStatus is not null)
+            while (Eligible(current))
             {
                 if (!visited.Add(current))
                 {
@@ -188,9 +196,9 @@ public static partial class DocumentationValidator
                     break;
                 }
 
-                var next = current.ResolvedRelationships("Superseded by", decisions).Distinct().ToArray();
-                var incoming = decisions.Where(candidate => candidate.LifecycleStatus is "Accepted" or "Superseded")
-                    .Where(candidate => candidate.ResolvedRelationships("Supersedes", decisions).Contains(current)).ToArray();
+                var next = edges[current]["Superseded by"];
+                if (next.Any(target => !Eligible(target))) break;
+                var incoming = incomingEdges[current].ToArray();
                 if (incoming.Length > 1 || next.Length > 1)
                 {
                     foreach (var item in next.Concat(incoming)) visited.Add(item);
