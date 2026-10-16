@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Llamarc42.Core/Llamarc42.Core.csproj" />
+  <Project Path="tests/Llamarc42.Core.Tests/Llamarc42.Core.Tests.csproj" />
+</Solution>
