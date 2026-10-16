@@ -252,6 +252,7 @@ public static partial class ProjectDiscovery
         Func<string, FileAttributes, FileSystemEntryKind> inspectEntry)
     {
         var documents = new List<DocumentInventoryEntry>();
+        var inspectedEntries = new Dictionary<string, DiscoveredEntry>(StringComparer.Ordinal);
         var pendingDirectories = new Stack<string>();
         pendingDirectories.Push(projectRoot);
 
@@ -288,6 +289,8 @@ public static partial class ProjectDiscovery
             if (!string.Equals(directory, projectRoot, StringComparison.Ordinal)
                 && ContainsValidRootMarker(entries, issues, inspectEntry, out inspectionFailed))
             {
+                var relative = Path.GetRelativePath(projectRoot, directory).Replace(Path.DirectorySeparatorChar, '/');
+                inspectedEntries[relative] = new DiscoveredEntry(relative, FileSystemEntryKind.Directory, true);
                 continue;
             }
 
@@ -327,6 +330,9 @@ public static partial class ProjectDiscovery
                         OrderDocuments(documents),
                         issues);
                 }
+
+                var entrySourcePath = Path.GetRelativePath(projectRoot, entry).Replace(Path.DirectorySeparatorChar, '/');
+                inspectedEntries[entrySourcePath] = new DiscoveredEntry(entrySourcePath, entryKind);
 
                 if (entryKind == FileSystemEntryKind.Link)
                 {
@@ -384,6 +390,11 @@ public static partial class ProjectDiscovery
             projectRoot,
             OrderDocuments(documents),
             issues);
+
+        ProjectDiscoveryResult Result(string supplied, string? normalized, ProjectDiscoveryOutcome outcome,
+            string? root, IEnumerable<DocumentInventoryEntry> inventory, IEnumerable<ProjectDiscoveryIssue> observations) =>
+            new(supplied, normalized, outcome, root, inventory, observations,
+                inspectedEntries.Values.OrderBy(entry => entry.SourcePath, UnicodeCodePointComparer.Instance));
     }
 
     private static bool ContainsValidRootMarker(
