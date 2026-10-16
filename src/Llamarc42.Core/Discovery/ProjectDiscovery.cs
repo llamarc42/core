@@ -167,14 +167,15 @@ public static partial class ProjectDiscovery
                         issues);
                 }
 
-                if ((markerAttributes & FileAttributes.ReparsePoint) != 0)
+                var markerKind = FileSystemEntryInspector.Inspect(markerPath, markerAttributes);
+                if (markerKind == FileSystemEntryKind.Link)
                 {
                     issues.Add(new ProjectDiscoveryIssue(
                         ProjectDiscoveryIssueCode.RootMarkerLink,
                         markerPath,
                         $"The exact {RootMarkerName} entry is a link or reparse point and cannot mark a project root. Discovery will continue toward the filesystem root."));
                 }
-                else if (!IsRegularFile(markerAttributes))
+                else if (markerKind != FileSystemEntryKind.RegularFile)
                 {
                     issues.Add(new ProjectDiscoveryIssue(
                         ProjectDiscoveryIssueCode.RootMarkerNotRegular,
@@ -298,18 +299,19 @@ public static partial class ProjectDiscovery
                         issues);
                 }
 
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                var entryKind = FileSystemEntryInspector.Inspect(entry, attributes);
+                if (entryKind == FileSystemEntryKind.Link)
                 {
                     continue;
                 }
 
-                if ((attributes & FileAttributes.Directory) != 0)
+                if (entryKind == FileSystemEntryKind.Directory)
                 {
                     pendingDirectories.Push(entry);
                     continue;
                 }
 
-                if (!IsRegularFile(attributes))
+                if (entryKind != FileSystemEntryKind.RegularFile)
                 {
                     continue;
                 }
@@ -374,7 +376,8 @@ public static partial class ProjectDiscovery
         try
         {
             var attributes = File.GetAttributes(markers[0]);
-            return IsRegularFile(attributes);
+            return FileSystemEntryInspector.Inspect(markers[0], attributes)
+                == FileSystemEntryKind.RegularFile;
         }
         catch (Exception exception) when (IsFileSystemInspectionException(exception))
         {
@@ -456,9 +459,6 @@ public static partial class ProjectDiscovery
 
     private static bool IsFileSystemInspectionException(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or System.Security.SecurityException;
-
-    private static bool IsRegularFile(FileAttributes attributes) =>
-        (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint | FileAttributes.Device)) == 0;
 
     [GeneratedRegex(@"^decisions/ADR-([0-9]{3})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$", RegexOptions.CultureInvariant)]
     private static partial Regex DecisionPathPattern();

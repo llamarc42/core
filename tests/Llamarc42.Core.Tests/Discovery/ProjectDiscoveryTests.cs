@@ -1,5 +1,8 @@
 using Llamarc42.Core.Discovery;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
 
 namespace Llamarc42.Core.Tests.Discovery;
 
@@ -233,6 +236,56 @@ public sealed class ProjectDiscoveryTests
         }
     }
 
+    [Fact]
+    public void DiscoverUnixFifoMarkerDoesNotSelectRootOrExcludeSubtree()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "ancestor");
+        var child = fixture.CreateDirectory("child");
+        fixture.Write("child/inside.md", "inside");
+        CreateFifo(Path.Combine(child, "project.md"));
+        var start = fixture.CreateDirectory("child/deeper");
+
+        var result = ProjectDiscovery.Discover(start);
+
+        Assert.Equal(ProjectDiscoveryOutcome.Discovered, result.Outcome);
+        Assert.Equal(Path.GetFullPath(fixture.Root), result.ProjectRoot);
+        Assert.Contains(result.Issues, issue => issue.Code == ProjectDiscoveryIssueCode.RootMarkerNotRegular);
+        Assert.Contains(result.Documents, document => document.SourcePath == "child/inside.md");
+        Assert.DoesNotContain(result.Documents, document => document.SourcePath == "child/project.md");
+    }
+
+    [Fact]
+    public void DiscoverUnixSocketMarkerDoesNotSelectRootOrExcludeSubtree()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "ancestor");
+        var child = fixture.CreateDirectory("child");
+        fixture.Write("child/inside.md", "inside");
+        var socketPath = Path.Combine(child, "project.md");
+        using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        socket.Bind(new UnixDomainSocketEndPoint(socketPath));
+        var start = fixture.CreateDirectory("child/deeper");
+
+        var result = ProjectDiscovery.Discover(start);
+
+        Assert.Equal(ProjectDiscoveryOutcome.Discovered, result.Outcome);
+        Assert.Equal(Path.GetFullPath(fixture.Root), result.ProjectRoot);
+        Assert.Contains(result.Issues, issue => issue.Code == ProjectDiscoveryIssueCode.RootMarkerNotRegular);
+        Assert.Contains(result.Documents, document => document.SourcePath == "child/inside.md");
+        Assert.DoesNotContain(result.Documents, document => document.SourcePath == "child/project.md");
+    }
+
     private static void CreateDirectoryLink(string link, string target)
     {
         if (!OperatingSystem.IsWindows())
@@ -262,4 +315,20 @@ public sealed class ProjectDiscoveryTests
             process.ExitCode == 0,
             $"Unable to create fixture junction. stdout: {process.StandardOutput.ReadToEnd()} stderr: {process.StandardError.ReadToEnd()}");
     }
+
+    private static void CreateFifo(string path)
+    {
+        const uint OwnerReadWrite = 0x180;
+        var status = MkFifo(path, OwnerReadWrite);
+        Assert.True(
+            status == 0,
+            $"Unable to create FIFO fixture: {new Win32Exception(Marshal.GetLastPInvokeError()).Message}");
+    }
+
+#pragma warning disable CA2101 // Unix filesystem paths are marshalled explicitly as UTF-8.
+#pragma warning disable SYSLIB1054 // The generated alternative requires enabling unsafe code for the test project.
+    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
+    private static extern int MkFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
+#pragma warning restore SYSLIB1054
+#pragma warning restore CA2101
 }
