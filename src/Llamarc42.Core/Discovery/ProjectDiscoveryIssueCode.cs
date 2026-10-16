@@ -17,4 +17,5 @@ public enum ProjectDiscoveryIssueCode
     InventoryEnumerationFailed,
     EntryInspectionFailed,
     PathBoundaryViolation,
+    StartPathLink,
 }

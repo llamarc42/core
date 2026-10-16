@@ -197,6 +197,51 @@ public sealed class ProjectDiscoveryTests
     }
 
     [Fact]
+    public void DiscoverRejectsSuppliedDirectoryLinkWithoutTraversingIt()
+    {
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "root");
+        fixture.Write("guides/setup.md", "setup");
+        var linkContainer = fixture.CreateSiblingDirectory();
+        var link = Path.Combine(linkContainer, "alias");
+        CreateDirectoryLink(link, fixture.Root);
+
+        var result = ProjectDiscovery.Discover(link);
+
+        Assert.Equal(ProjectDiscoveryOutcome.Error, result.Outcome);
+        Assert.Equal(link, result.SuppliedPath);
+        Assert.Equal(Path.GetFullPath(link), result.NormalizedStartPath);
+        Assert.Null(result.ProjectRoot);
+        Assert.Empty(result.Documents);
+        var issue = Assert.Single(result.Issues);
+        Assert.Equal(ProjectDiscoveryIssueCode.StartPathLink, issue.Code);
+        Assert.Equal(Path.GetFullPath(link), issue.Path);
+    }
+
+    [Fact]
+    public void DiscoverRejectsRegularDescendantBeneathSuppliedDirectoryLink()
+    {
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "root");
+        fixture.Write("guides/setup.md", "setup");
+        var linkContainer = fixture.CreateSiblingDirectory();
+        var link = Path.Combine(linkContainer, "alias");
+        CreateDirectoryLink(link, fixture.Root);
+        var suppliedPath = Path.Combine(link, "guides");
+
+        var result = ProjectDiscovery.Discover(suppliedPath);
+
+        Assert.Equal(ProjectDiscoveryOutcome.Error, result.Outcome);
+        Assert.Equal(suppliedPath, result.SuppliedPath);
+        Assert.Equal(Path.GetFullPath(suppliedPath), result.NormalizedStartPath);
+        Assert.Null(result.ProjectRoot);
+        Assert.Empty(result.Documents);
+        var issue = Assert.Single(result.Issues);
+        Assert.Equal(ProjectDiscoveryIssueCode.StartPathLink, issue.Code);
+        Assert.Equal(Path.GetFullPath(link), issue.Path);
+    }
+
+    [Fact]
     public void DiscoverLinkedRootMarkerIsSkippedForValidAncestor()
     {
         using var fixture = new DiscoveryFixture();
@@ -295,7 +340,9 @@ public sealed class ProjectDiscoveryTests
         ProjectDiscoveryResult? result = null;
         var exception = Record.Exception(() => result = ProjectDiscovery.Discover(
             fixture.Root,
-            (_, _) => throw new IOException("Controlled root inspection failure.")));
+            (path, attributes) => Path.GetFileName(path) == "project.md"
+                ? throw new IOException("Controlled root inspection failure.")
+                : FileSystemEntryInspector.Inspect(path, attributes)));
 
         Assert.Null(exception);
         Assert.NotNull(result);

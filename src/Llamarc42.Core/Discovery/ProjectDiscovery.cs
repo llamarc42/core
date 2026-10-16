@@ -58,28 +58,43 @@ public static partial class ProjectDiscovery
                 $"The supplied start path cannot be normalized ({exception.GetType().Name}). Supply a valid existing path and retry.");
         }
 
-        FileAttributes startAttributes;
-        try
+        FileAttributes startAttributes = default;
+        foreach (var routeComponent in EnumeratePathRoute(normalizedStartPath))
         {
-            startAttributes = File.GetAttributes(normalizedStartPath);
-        }
-        catch (Exception exception) when (IsNotFoundException(exception))
-        {
-            return Failure(
-                suppliedPath,
-                normalizedStartPath,
-                ProjectDiscoveryIssueCode.StartPathNotFound,
-                normalizedStartPath,
-                "The supplied start path does not exist. Supply an existing file or directory and retry.");
-        }
-        catch (Exception exception) when (IsFileSystemInspectionException(exception))
-        {
-            return Failure(
-                suppliedPath,
-                normalizedStartPath,
-                ProjectDiscoveryIssueCode.StartPathInaccessible,
-                normalizedStartPath,
-                $"The supplied start path cannot be inspected ({exception.GetType().Name}). Correct access to the path and retry.");
+            FileSystemEntryKind routeComponentKind;
+            try
+            {
+                startAttributes = File.GetAttributes(routeComponent);
+                routeComponentKind = inspectEntry(routeComponent, startAttributes);
+            }
+            catch (Exception exception) when (IsNotFoundException(exception))
+            {
+                return Failure(
+                    suppliedPath,
+                    normalizedStartPath,
+                    ProjectDiscoveryIssueCode.StartPathNotFound,
+                    normalizedStartPath,
+                    "The supplied start path does not exist. Supply an existing file or directory and retry.");
+            }
+            catch (Exception exception) when (IsFileSystemInspectionException(exception))
+            {
+                return Failure(
+                    suppliedPath,
+                    normalizedStartPath,
+                    ProjectDiscoveryIssueCode.StartPathInaccessible,
+                    routeComponent,
+                    $"The supplied start path route cannot be inspected ({exception.GetType().Name}). Correct access to the path and retry.");
+            }
+
+            if (routeComponentKind == FileSystemEntryKind.Link)
+            {
+                return Failure(
+                    suppliedPath,
+                    normalizedStartPath,
+                    ProjectDiscoveryIssueCode.StartPathLink,
+                    routeComponent,
+                    "The supplied start path route contains a symbolic link or reparse point. Supply a direct non-link path and retry.");
+            }
         }
 
         string? searchDirectory;
@@ -473,6 +488,21 @@ public static partial class ProjectDiscovery
 
     private static bool IsFileSystemInspectionException(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or System.Security.SecurityException;
+
+    private static IEnumerable<string> EnumeratePathRoute(string absolutePath)
+    {
+        var root = Path.GetPathRoot(absolutePath)!;
+        yield return root;
+
+        var current = root;
+        foreach (var segment in absolutePath[root.Length..].Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            yield return current;
+        }
+    }
 
     [GeneratedRegex(@"^decisions/ADR-([0-9]{3})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$", RegexOptions.CultureInvariant)]
     private static partial Regex DecisionPathPattern();
