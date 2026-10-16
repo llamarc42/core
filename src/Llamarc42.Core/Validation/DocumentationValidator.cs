@@ -75,7 +75,16 @@ public static partial class DocumentationValidator
             try
             {
                 var offset = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
-                sources.Add(new DocumentState(entry, StrictUtf8.GetString(bytes, offset, bytes.Length - offset)));
+                var source = new DocumentState(entry, StrictUtf8.GetString(bytes, offset, bytes.Length - offset));
+                sources.Add(source);
+                if (entry.DocumentType == DocumentType.DecisionRecord)
+                {
+                    ValidateDecisionForm(source, diagnostics);
+                }
+                else if (entry.DocumentType == DocumentType.CurrentGuidance && entry.Path.StartsWith("specifications/", StringComparison.Ordinal))
+                {
+                    ValidateSpecification(source, diagnostics);
+                }
             }
             catch (DecoderFallbackException)
             {
@@ -97,21 +106,7 @@ public static partial class DocumentationValidator
         {
             ValidatePaths(sources, diagnostics);
             ValidateProject(sources.Single(source => source.Entry.DocumentType == DocumentType.ProjectDescriptor), diagnostics);
-            foreach (var source in sources.Where(source => source.Text is not null))
-            {
-                if (source.Entry.DocumentType == DocumentType.CurrentGuidance &&
-                    source.Entry.Path.StartsWith("specifications/", StringComparison.Ordinal))
-                {
-                    ValidateSpecification(source, diagnostics);
-                }
-            }
-
             var decisions = sources.Where(source => source.Entry.DocumentType == DocumentType.DecisionRecord).ToArray();
-            foreach (var decision in decisions.Where(source => source.Text is not null))
-            {
-                ValidateDecisionForm(decision, diagnostics);
-            }
-
             ValidateDecisionIdentities(decisions, diagnostics);
             var physical = new PhysicalInventory(
                 [.. discovery.Entries.Where(entry => entry.Kind == FileSystemEntryKind.RegularFile).Select(entry => entry.SourcePath)],

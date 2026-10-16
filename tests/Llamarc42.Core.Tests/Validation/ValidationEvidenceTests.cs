@@ -9,6 +9,20 @@ namespace Llamarc42.Core.Tests.Validation;
 public sealed class ValidationEvidenceTests
 {
     [Fact]
+    public void UnexpectedLaterReadFailureRetainsEarlierAuthorityAndDiagnostics()
+    {
+        using var fixture = new DiscoveryFixture();
+        foreach (var file in ContractCoverageTests.ValidFiles()) fixture.Write(file.Key, file.Value);
+        fixture.Write("decisions/ADR-005-invalid.md", ContractCoverageTests.Adr("ADR-005", "Draft"));
+        var result = DocumentationValidator.Validate(fixture.Root, ProjectDiscovery.Discover,
+            path => path.EndsWith("spec.md", StringComparison.Ordinal) ? throw new InvalidOperationException("controlled later failure") : File.ReadAllBytes(path));
+        Assert.Equal(ValidationToolErrorCode.LC42T999, result.ToolError?.Code);
+        Assert.Equal(ContractCoverageTests.ValidFiles().Count + 1, result.Documents.Count);
+        Assert.Equal(AuthorityState.Current, result.Documents.Single(document => document.DecisionId == "ADR-003").AuthorityState);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V205);
+    }
+
+    [Fact]
     public void EveryCodeUsesItsNormativePhase()
     {
         int[][] phases =
