@@ -9,7 +9,8 @@ public sealed class ProjectDiscoveryResult
         ProjectDiscoveryOutcome outcome,
         string? projectRoot,
         IEnumerable<DocumentInventoryEntry> documents,
-        IEnumerable<ProjectDiscoveryIssue> issues)
+        IEnumerable<ProjectDiscoveryIssue> issues,
+        IEnumerable<DiscoveredEntry>? entries = null)
     {
         SuppliedPath = suppliedPath;
         NormalizedStartPath = normalizedStartPath;
@@ -17,6 +18,7 @@ public sealed class ProjectDiscoveryResult
         ProjectRoot = projectRoot;
         Documents = Array.AsReadOnly(documents.ToArray());
         Issues = Array.AsReadOnly(issues.ToArray());
+        Entries = Array.AsReadOnly((entries ?? []).ToArray());
     }
 
     /// <summary>The caller-supplied path, preserved without normalization.</summary>
@@ -36,4 +38,8 @@ public sealed class ProjectDiscoveryResult
 
     /// <summary>Ordered conditions observed during discovery.</summary>
     public IReadOnlyList<ProjectDiscoveryIssue> Issues { get; }
+
+    internal IReadOnlyList<DiscoveredEntry> Entries { get; }
 }
+
+internal sealed record DiscoveredEntry(string SourcePath, FileSystemEntryKind Kind, bool IsNestedRoot = false);
