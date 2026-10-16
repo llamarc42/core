@@ -8,9 +8,12 @@ internal sealed class DiscoveryFixture : IDisposable
 {
     private readonly List<string> _cleanupRoots = [];
 
-    public DiscoveryFixture()
+    public DiscoveryFixture(bool useShortRoot = false)
     {
-        Root = Path.Combine(Path.GetTempPath(), "llamarc42-core-tests", Guid.NewGuid().ToString("N"));
+        var identifier = Guid.NewGuid().ToString("N");
+        Root = useShortRoot
+            ? Path.Combine(Path.GetTempPath(), $"l42-{identifier[..12]}")
+            : Path.Combine(Path.GetTempPath(), "llamarc42-core-tests", identifier);
         Directory.CreateDirectory(Root);
         _cleanupRoots.Add(Root);
     }

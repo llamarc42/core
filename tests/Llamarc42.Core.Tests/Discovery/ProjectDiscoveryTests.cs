@@ -268,7 +268,7 @@ public sealed class ProjectDiscoveryTests
             return;
         }
 
-        using var fixture = new DiscoveryFixture();
+        using var fixture = new DiscoveryFixture(useShortRoot: true);
         fixture.Write("project.md", "ancestor");
         var child = fixture.CreateDirectory("child");
         fixture.Write("child/inside.md", "inside");
