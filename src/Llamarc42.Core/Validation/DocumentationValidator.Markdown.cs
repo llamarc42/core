@@ -271,8 +271,8 @@ public static partial class DocumentationValidator
         internal ValidationDiagnostic Diagnostic(ValidationDiagnosticCode code, string message, int? line = null, string? destination = null) =>
             new(code, message, Entry.Path, Entry.SourcePath, line, destination: destination);
 
-        internal IEnumerable<(string Text, int Line)> Headings(int level) => Document.Descendants<HeadingBlock>()
-            .Where(heading => heading.Level == level && !heading.IsSetext)
+        internal IEnumerable<(string Text, int Line)> Headings(int level, bool atxOnly = false) => Document.Descendants<HeadingBlock>()
+            .Where(heading => heading.Level == level && (!atxOnly || !heading.IsSetext))
             .Select(heading => (InlineText(heading.Inline), heading.Line + 1));
 
         internal IEnumerable<(string Value, int Line)> HeaderFields(string? name)
@@ -315,7 +315,7 @@ public static partial class DocumentationValidator
         {
             var links = Document.Descendants<LinkInline>().Where(link => !link.IsImage && link.Url is not null)
                 .Select(link => (Destination: link.Url!, link.Line))
-                .Concat(Document.Descendants<AutolinkInline>().Where(link => !link.IsEmail).Select(link => (Destination: link.Url, link.Line)))
+                .Concat(Document.Descendants<AutolinkInline>().Select(link => (Destination: link.IsEmail ? "mailto:" + link.Url : link.Url, link.Line)))
                 .OrderBy(link => link.Line);
             foreach (var (destination, sourceLine) in links)
             {
@@ -327,17 +327,12 @@ public static partial class DocumentationValidator
             }
         }
 
-        internal IEnumerable<DocumentState> ResolvedRelationships(string heading, IReadOnlyList<DocumentState> decisions)
-        {
-            foreach (var link in Sections(heading).SelectMany(section => section.Links))
-            {
-                if (TryResolveDestination(Entry.SourcePath, link.Destination, out var path, out _))
-                {
-                    var targets = decisions.Where(decision => decision.Entry.Path == path).ToArray();
-                    if (targets.Length == 1) yield return targets[0];
-                }
-            }
-        }
+        // Populated only by the shared local-link checks, never by a second resolver.
+        internal List<(string Heading, DocumentState Target)> ValidatedRelationships { get; } = [];
+
+        internal IEnumerable<DocumentState> ResolvedRelationships(string heading) => ValidatedRelationships
+            .Where(edge => edge.Heading == heading).GroupBy(edge => edge.Target)
+            .Where(group => group.Count() == 1).Select(group => group.Key);
 
         private IEnumerable<(int Start, int End)> SectionsWithoutLinks(string name)
         {

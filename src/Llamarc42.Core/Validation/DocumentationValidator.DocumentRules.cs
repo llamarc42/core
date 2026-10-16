@@ -75,7 +75,7 @@ public static partial class DocumentationValidator
                 candidates[0].Line));
         }
 
-        var headings = source.Headings(1).ToArray();
+        var headings = source.Headings(1, atxOnly: true).ToArray();
         if (!headings.Any(heading => heading.Text.Length > 0))
         {
             diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V007,

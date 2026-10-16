@@ -77,6 +77,10 @@ public static partial class DocumentationValidator
                         diagnostics.Add(source.Diagnostic(ValidationDiagnosticCode.LC42V212,
                             $"Relationship under ## {link.RelationshipHeading} targets the same ADR.", link.Line, link.Destination));
                     }
+                    else
+                    {
+                        source.ValidatedRelationships.Add((link.RelationshipHeading, target));
+                    }
                 }
             }
 
@@ -121,7 +125,7 @@ public static partial class DocumentationValidator
     private static void ValidateRelationships(IReadOnlyList<DocumentState> decisions, List<ValidationDiagnostic> diagnostics)
     {
         var edges = decisions.ToDictionary(source => source, source => RelationshipHeadings.ToDictionary(
-            heading => heading, heading => source.ResolvedRelationships(heading, decisions).Distinct().ToArray()));
+            heading => heading, heading => source.ResolvedRelationships(heading).ToArray()));
         static bool Eligible(DocumentState source) => source.IdentifierValid && source.LifecycleStatus is not null;
         var incomingEdges = decisions.ToDictionary(source => source, _ => new List<DocumentState>());
         foreach (var source in decisions.Where(source => Eligible(source) && source.LifecycleStatus is "Accepted" or "Superseded"))

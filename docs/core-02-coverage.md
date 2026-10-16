@@ -99,6 +99,17 @@ All four tool codes have individual theory invocations of
 
 ## Execution and limits
 
+[IndependentReviewRegressionTests](../tests/Llamarc42.Core.Tests/Validation/IndependentReviewRegressionTests.cs)
+adds Phase 2 remediation evidence:
+
+| Rules | Emitting/control evidence | Suppression and authority |
+| --- | --- | --- |
+| LC42V211, LC42V214–216 | External dot-segment URI cannot supply reciprocity or a successor; equivalent local pair is Valid. | External link reports V211; missing successor reports V214/V216 and missing reciprocal metadata V215. A valid local successor with invalid external reverse link reports V214, not a false missing-chain V216. Status-derived authority is unchanged. |
+| LC42V212–214, LC42V216 | Self or repeated local targets cannot provide graph successors. | Independent self/duplicate diagnostics survive; graph receives only unique validated non-self local targets. |
+| LC42V211 | Email autolink under Related decisions reports V211 with mailto destination; outside relationships emits nothing. | Email is external, never a filesystem reference or graph edge. |
+| LC42V202 | Setext ADR title is accepted; mixed ATX/Setext H1s and mismatched Setext identifier emit V202. | Identifier-dependent graph diagnostics are suppressed while Accepted authority remains Current. |
+| LC42V007 | Setext-only project title still emits V007. | Only project descriptors require ATX H1; valid ATX project controls accompany every fixture. |
+
 Automated-review regressions in `ValidationBoundaryTests` cover fences inside actual
 HTML comments, literal comment delimiters inside inline/fenced code, known year
 mismatches despite malformed iteration topics, invalid ADR identifiers suppressing
