@@ -25,7 +25,12 @@ public static partial class ProjectDiscovery
     /// <c>project.md</c>, then creates the contract document inventory without following links or
     /// traversing nested projects.
     /// </summary>
-    public static ProjectDiscoveryResult Discover(string startPath)
+    public static ProjectDiscoveryResult Discover(string startPath) =>
+        Discover(startPath, FileSystemEntryInspector.Inspect);
+
+    internal static ProjectDiscoveryResult Discover(
+        string startPath,
+        Func<string, FileAttributes, FileSystemEntryKind> inspectEntry)
     {
         var suppliedPath = startPath ?? string.Empty;
         if (string.IsNullOrWhiteSpace(startPath))
@@ -146,10 +151,12 @@ public static partial class ProjectDiscovery
             {
                 var markerPath = markers[0];
                 FileAttributes markerAttributes;
+                FileSystemEntryKind markerKind;
 
                 try
                 {
                     markerAttributes = File.GetAttributes(markerPath);
+                    markerKind = inspectEntry(markerPath, markerAttributes);
                 }
                 catch (Exception exception) when (IsFileSystemInspectionException(exception))
                 {
@@ -167,7 +174,6 @@ public static partial class ProjectDiscovery
                         issues);
                 }
 
-                var markerKind = FileSystemEntryInspector.Inspect(markerPath, markerAttributes);
                 if (markerKind == FileSystemEntryKind.Link)
                 {
                     issues.Add(new ProjectDiscoveryIssue(
@@ -184,7 +190,12 @@ public static partial class ProjectDiscovery
                 }
                 else
                 {
-                    return BuildInventory(suppliedPath, normalizedStartPath, searchDirectory, issues);
+                    return BuildInventory(
+                        suppliedPath,
+                        normalizedStartPath,
+                        searchDirectory,
+                        issues,
+                        inspectEntry);
                 }
             }
 
@@ -222,7 +233,8 @@ public static partial class ProjectDiscovery
         string suppliedPath,
         string normalizedStartPath,
         string projectRoot,
-        List<ProjectDiscoveryIssue> issues)
+        List<ProjectDiscoveryIssue> issues,
+        Func<string, FileAttributes, FileSystemEntryKind> inspectEntry)
     {
         var documents = new List<DocumentInventoryEntry>();
         var pendingDirectories = new Stack<string>();
@@ -259,7 +271,7 @@ public static partial class ProjectDiscovery
 
             var inspectionFailed = false;
             if (!string.Equals(directory, projectRoot, StringComparison.Ordinal)
-                && ContainsValidRootMarker(entries, issues, out inspectionFailed))
+                && ContainsValidRootMarker(entries, issues, inspectEntry, out inspectionFailed))
             {
                 continue;
             }
@@ -278,10 +290,12 @@ public static partial class ProjectDiscovery
             foreach (var entry in entries)
             {
                 FileAttributes attributes;
+                FileSystemEntryKind entryKind;
 
                 try
                 {
                     attributes = File.GetAttributes(entry);
+                    entryKind = inspectEntry(entry, attributes);
                 }
                 catch (Exception exception) when (IsFileSystemInspectionException(exception))
                 {
@@ -299,7 +313,6 @@ public static partial class ProjectDiscovery
                         issues);
                 }
 
-                var entryKind = FileSystemEntryInspector.Inspect(entry, attributes);
                 if (entryKind == FileSystemEntryKind.Link)
                 {
                     continue;
@@ -361,6 +374,7 @@ public static partial class ProjectDiscovery
     private static bool ContainsValidRootMarker(
         IEnumerable<string> entries,
         List<ProjectDiscoveryIssue> issues,
+        Func<string, FileAttributes, FileSystemEntryKind> inspectEntry,
         out bool inspectionFailed)
     {
         inspectionFailed = false;
@@ -376,7 +390,7 @@ public static partial class ProjectDiscovery
         try
         {
             var attributes = File.GetAttributes(markers[0]);
-            return FileSystemEntryInspector.Inspect(markers[0], attributes)
+            return inspectEntry(markers[0], attributes)
                 == FileSystemEntryKind.RegularFile;
         }
         catch (Exception exception) when (IsFileSystemInspectionException(exception))

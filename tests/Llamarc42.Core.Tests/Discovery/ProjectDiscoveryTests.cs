@@ -286,6 +286,48 @@ public sealed class ProjectDiscoveryTests
         Assert.DoesNotContain(result.Documents, document => document.SourcePath == "child/project.md");
     }
 
+    [Fact]
+    public void DiscoverRootInspectionFailureReturnsStructuredError()
+    {
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "root");
+
+        ProjectDiscoveryResult? result = null;
+        var exception = Record.Exception(() => result = ProjectDiscovery.Discover(
+            fixture.Root,
+            (_, _) => throw new IOException("Controlled root inspection failure.")));
+
+        Assert.Null(exception);
+        Assert.NotNull(result);
+        Assert.Equal(ProjectDiscoveryOutcome.Error, result.Outcome);
+        Assert.Null(result.ProjectRoot);
+        Assert.Empty(result.Documents);
+        var issue = Assert.Single(result.Issues);
+        Assert.Equal(ProjectDiscoveryIssueCode.RootInspectionFailed, issue.Code);
+    }
+
+    [Fact]
+    public void DiscoverInventoryInspectionFailureReturnsStructuredError()
+    {
+        using var fixture = new DiscoveryFixture();
+        fixture.Write("project.md", "root");
+        fixture.Write("broken.md", "document");
+
+        ProjectDiscoveryResult? result = null;
+        var exception = Record.Exception(() => result = ProjectDiscovery.Discover(
+            fixture.Root,
+            (path, attributes) => Path.GetFileName(path) == "broken.md"
+                ? throw new IOException("Controlled inventory inspection failure.")
+                : FileSystemEntryInspector.Inspect(path, attributes)));
+
+        Assert.Null(exception);
+        Assert.NotNull(result);
+        Assert.Equal(ProjectDiscoveryOutcome.Error, result.Outcome);
+        Assert.Equal(Path.GetFullPath(fixture.Root), result.ProjectRoot);
+        var issue = Assert.Single(result.Issues);
+        Assert.Equal(ProjectDiscoveryIssueCode.EntryInspectionFailed, issue.Code);
+    }
+
     private static void CreateDirectoryLink(string link, string target)
     {
         if (!OperatingSystem.IsWindows())
