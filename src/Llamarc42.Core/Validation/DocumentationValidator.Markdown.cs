@@ -59,7 +59,7 @@ public static partial class DocumentationValidator
     private static bool HasAuthoredBody(DocumentState source)
     {
         var headerLines = source.HeaderFields(null).Select(field => field.Line - 1).ToHashSet();
-        return source.Document.Descendants<ParagraphBlock>().Any(block =>
+        return source.Document.Descendants<LeafBlock>().Where(block => block is ParagraphBlock or HtmlBlock).Any(block =>
             Enumerable.Range(block.Line, CountSourceLines(source.Text!, block.Span.Start, block.Span.End))
                 .Any(line => line < source.Lines.Length && !headerLines.Contains(line) &&
                     !string.IsNullOrWhiteSpace(source.CommentFreeLines[line])));
@@ -170,9 +170,16 @@ public static partial class DocumentationValidator
 
     private static bool IdentifierToken(string text, string id)
     {
-        var index = text.IndexOf(id, StringComparison.Ordinal);
-        return index >= 0 && (index == 0 || !char.IsAsciiLetterOrDigit(text[index - 1])) &&
-            (index + id.Length == text.Length || !char.IsAsciiLetterOrDigit(text[index + id.Length]));
+        for (var offset = 0; offset < text.Length;)
+        {
+            var index = text.IndexOf(id, offset, StringComparison.Ordinal);
+            if (index < 0) return false;
+            if ((index == 0 || !char.IsAsciiLetterOrDigit(text[index - 1])) &&
+                (index + id.Length == text.Length || !char.IsAsciiLetterOrDigit(text[index + id.Length]))) return true;
+            offset = index + id.Length;
+        }
+
+        return false;
     }
 
     private static string Fold(string value) => UnicodeCaseFolding.Fold(value);
@@ -204,16 +211,13 @@ public static partial class DocumentationValidator
     [GeneratedRegex("^[ ]{0,3}Documentation contract: .+?[ \\t]*$", RegexOptions.CultureInvariant)]
     private static partial Regex UnsupportedDeclarationPattern();
 
-    [GeneratedRegex("^history/iterations/(?<year>\\p{Nd}{4})/(?<file>\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd}{2}.*\\.[mM][dD])$", RegexOptions.CultureInvariant)]
-    private static partial Regex DailyCandidatePattern();
-
     [GeneratedRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?\\.md$", RegexOptions.CultureInvariant)]
     private static partial Regex DailyExactPattern();
 
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9+.-]*:", RegexOptions.CultureInvariant)]
     private static partial Regex SchemePattern();
 
-    [GeneratedRegex("^[A-Za-z]:", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z]:[/\\\\]", RegexOptions.CultureInvariant)]
     private static partial Regex DrivePathPattern();
 
     [GeneratedRegex("^decisions/ADR-[0-9]{3}-[a-z0-9]+(?:-[a-z0-9]+)*\\.md$", RegexOptions.CultureInvariant)]
@@ -278,7 +282,9 @@ public static partial class DocumentationValidator
         }
 
         internal bool IsTopLevelParagraphLine(int line) => Document.OfType<ParagraphBlock>().Any(block =>
-            line >= block.Line && line < block.Line + CountSourceLines(Text!, block.Span.Start, block.Span.End));
+            line >= block.Line && line < block.Line + CountSourceLines(Text!, block.Span.Start, block.Span.End) &&
+            !Lines.Skip(block.Line).Take(CountSourceLines(Text!, block.Span.Start, block.Span.End))
+                .Any(text => text.Contains('|') && text.Trim().Trim('|').Split('|').All(cell => TableDelimiterPattern().IsMatch(cell.Trim()))));
 
         internal IEnumerable<Section> Sections(string name)
         {
@@ -298,13 +304,17 @@ public static partial class DocumentationValidator
 
         internal IEnumerable<Link> Links()
         {
-            foreach (var link in Document.Descendants<LinkInline>().Where(link => !link.IsImage && link.Url is not null))
+            var links = Document.Descendants<LinkInline>().Where(link => !link.IsImage && link.Url is not null)
+                .Select(link => (Destination: link.Url!, link.Line))
+                .Concat(Document.Descendants<AutolinkInline>().Where(link => !link.IsEmail).Select(link => (Destination: link.Url, link.Line)))
+                .OrderBy(link => link.Line);
+            foreach (var (destination, sourceLine) in links)
             {
-                var line = link.Line + 1;
+                var line = sourceLine + 1;
                 var heading = Entry.DocumentType == DocumentType.DecisionRecord
                     ? RelationshipHeadings.FirstOrDefault(name => SectionsWithoutLinks(name).Any(section => line > section.Start + 1 && line <= section.End))
                     : null;
-                yield return new Link(link.Url!, line, heading);
+                yield return new Link(destination, line, heading);
             }
         }
 
@@ -360,4 +370,7 @@ public static partial class DocumentationValidator
 
     [GeneratedRegex("<!--.*?(?:-->|$)", RegexOptions.Singleline | RegexOptions.CultureInvariant)]
     private static partial Regex CommentPattern();
+
+    [GeneratedRegex("^:?-+:?$", RegexOptions.CultureInvariant)]
+    private static partial Regex TableDelimiterPattern();
 }

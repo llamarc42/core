@@ -8,6 +8,18 @@ namespace Llamarc42.Core.Tests.Validation;
 
 public sealed class ValidationBoundaryTests
 {
+    [Fact]
+    public void HtmlBodySingleLetterSchemesAndRepeatedIdentifierTokensUseParsedMeaning()
+    {
+        using var fixture = Project();
+        fixture.Write("project.md", "# Project\n\nDocumentation contract: llamarc42/v0.1\n\n<div>Authored purpose.</div>\n");
+        fixture.Write("guides/guide.md", "[scheme](x:opaque)\n\n## Amends\n\n[external](https://example.invalid)\n");
+        fixture.Write("decisions/ADR-001-one.md", ContractCoverageTests.Adr("prefixADR-001 then ADR-001", "Proposed"));
+        Assert.Equal(ValidationOutcome.Valid, DocumentationValidator.Validate(fixture.Root).Outcome);
+        fixture.Write("guides/guide.md", "<file:///outside.md>\n");
+        Assert.Contains(DocumentationValidator.Validate(fixture.Root).Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V105);
+    }
+
     [Theory]
     [InlineData("```\nStatus: Proposed\n```\n")]
     [InlineData("    Status: Proposed\n")]
@@ -15,6 +27,7 @@ public sealed class ValidationBoundaryTests
     [InlineData("- Status: Proposed\n")]
     [InlineData("<!--\nStatus: Proposed\n-->\n")]
     [InlineData("## Later\nStatus: Proposed\n")]
+    [InlineData("Field | Other\n--- | ---\nStatus: Proposed | example\n")]
     public void MetadataIgnoresExcludedMarkdownContexts(string context)
     {
         using var fixture = Project();
@@ -33,6 +46,7 @@ public sealed class ValidationBoundaryTests
     [InlineData("`Documentation contract: llamarc42/v0.1`\n")]
     [InlineData("\"Documentation contract: llamarc42/v0.1\"\n")]
     [InlineData("<!--\nDocumentation contract: llamarc42/v0.1\n-->\n")]
+    [InlineData("Field | Other\n--- | ---\nDocumentation contract: llamarc42/v0.1 | example\n")]
     public void DeclarationExamplesDoNotSelectContract(string example)
     {
         using var fixture = Project();

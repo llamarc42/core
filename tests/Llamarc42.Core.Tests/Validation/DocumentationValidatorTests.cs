@@ -74,10 +74,20 @@ public sealed class DocumentationValidatorTests
 
         var result = DocumentationValidator.Validate(fixture.Root);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V104);
+        var distinctSources = Directory.EnumerateFiles(Path.Combine(fixture.Root, "specifications")).Count() == 3;
+        Assert.Equal(distinctSources, result.Diagnostics.Any(diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V104));
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == ValidationDiagnosticCode.LC42V151);
-        Assert.Equal(AuthorityState.Current, result.Documents.Single(document => document.SourcePath.EndsWith("Straße.md", StringComparison.Ordinal)).AuthorityState);
-        Assert.Equal(AuthorityState.NonCurrent, result.Documents.Single(document => document.SourcePath.EndsWith("STRASSE.md", StringComparison.Ordinal)).AuthorityState);
+        if (distinctSources)
+        {
+            Assert.Equal(AuthorityState.Current, result.Documents.Single(document => document.SourcePath.EndsWith("Straße.md", StringComparison.Ordinal)).AuthorityState);
+            Assert.Equal(AuthorityState.NonCurrent, result.Documents.Single(document => document.SourcePath.EndsWith("STRASSE.md", StringComparison.Ordinal)).AuthorityState);
+        }
+        else
+        {
+            Assert.Equal(AuthorityState.NonCurrent, result.Documents.Single(document =>
+                document.SourcePath.StartsWith("specifications/", StringComparison.Ordinal) &&
+                !document.SourcePath.EndsWith("invalid.md", StringComparison.Ordinal)).AuthorityState);
+        }
         Assert.Equal(AuthorityState.Indeterminate, result.Documents.Single(document => document.SourcePath.EndsWith("invalid.md", StringComparison.Ordinal)).AuthorityState);
     }
 
